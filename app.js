@@ -163,19 +163,19 @@ function buildRoads(segs) {
       const hw = (s.w + extra) / 2, nx = (-dz / L) * hw, nz = (dx / L) * hw;
       const i = pos.length / 3;
       pos.push(s.a[0] + nx, y, s.a[1] + nz, s.b[0] + nx, y, s.b[1] + nz, s.b[0] - nx, y, s.b[1] - nz, s.a[0] - nx, y, s.a[1] - nz);
-      idx.push(i, i + 2, i + 1, i, i + 3, i + 2);
+      idx.push(i, i + 1, i + 2, i, i + 2, i + 3);
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setIndex(idx); geo.computeVertexNormals();
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -y * 4 });
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.95, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -y * 4 });
     const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; g.add(m);
     // juntas arredondadas
     const disc = new THREE.CircleGeometry(1, 16).rotateX(-Math.PI / 2);
     const inst = new THREE.InstancedMesh(disc, mat, segs.length * 2);
     const M = new THREE.Matrix4(); let k = 0;
-    for (const s of segs) for (const p of [s.a, s.b]) { const r = (s.w + extra) / 2; M.makeScale(r, 1, r).setPosition(p[0], y, p[1]); inst.setMatrixAt(k++, M); }
-    inst.receiveShadow = true; g.add(inst);
+    for (const s of segs) for (const p of [s.a, s.b]) { const r = (s.w + extra) / 2; M.makeScale(r, 1, r).setPosition(p[0], y - 0.03, p[1]); inst.setMatrixAt(k++, M); }
+    g.add(inst);
   };
   layer(5, 0.06, COR.calcada);
   layer(0, 0.14, COR.asfalto);
@@ -524,6 +524,15 @@ async function load(b) {
   if (cityGroup) { scene.remove(cityGroup); cityGroup.traverse((o) => { o.geometry?.dispose(); o.element?.remove(); }); }
   S.bairro = b; S.prem.vendaM2 = b.vendaM2;
   const city = await carregarCidade(b, (t) => (document.getElementById('loaderText').textContent = t));
+  try { montarCena(b, city); } catch (e) {
+    console.error(e);
+    document.getElementById('loaderText').textContent = 'Erro ao montar a cena: ' + e.message;
+    return;
+  }
+  loader.classList.add('done');
+}
+
+function montarCena(b, city) {
   S.city = city;
   const rand = rng(b.id + '-viz');
   cityGroup = new THREE.Group();
@@ -551,7 +560,6 @@ async function load(b) {
   controls.enableRotate = true;
   setPolar(ISO);
   placeCamera(new THREE.Vector3(0, 0, 0), ISO, Math.PI / 4, 1.1);
-  loader.classList.add('done');
 }
 
 const sel = document.getElementById('bairro');
