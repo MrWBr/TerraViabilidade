@@ -3,7 +3,8 @@
 Mapa isométrico 3D de bairros de Curitiba com terrenos à venda, parâmetros de zoneamento e estudo de viabilidade (método residual) por lote.
 
 - **Mapa:** ruas, edificações e parques reais do OpenStreetMap (Overpass API), carregados no navegador. Se a API estiver fora, cai num bairro procedural (modo demo).
-- **Terrenos, preços e zoneamento:** *simulados* para demonstração.
+- **Água Verde · anúncios reais:** 10 terrenos de anúncios públicos (curadoria manual, coleta em 12/11/2026), geocodificados e encaixados na rua certa do mapa. Apenas preço pedido, área, medidas e zona informadas no anúncio — sem fotos ou contatos. Ver `reais.js`.
+- **Demais bairros:** terrenos, preços e zoneamento *simulados* para demonstração.
 - **Clique num terreno:** a câmera vai para vista superior, mostra recuos, projeção e o volume máximo edificável; a barra lateral traz zoneamento, potencial construtivo e a conta de viabilidade com premissas editáveis.
 
 Sem build: HTML + ES modules + Three.js (vendorizado em `vendor/`). Para rodar local: `python3 -m http.server` e abrir `http://localhost:8000`.

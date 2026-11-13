@@ -3,7 +3,8 @@
 // preços via integração com portais/parceiros, custo de obra via CUB-PR (Sinduscon-PR).
 
 export const BAIRROS = [
-  { id: 'agua-verde', nome: 'Água Verde',       lat: -25.4489, lon: -49.2859, terrenoM2: 4200, vendaM2: 10500 },
+  { id: 'agua-verde-real', nome: 'Água Verde · anúncios reais', lat: -25.4563, lon: -49.2805, raio: 880, terrenoM2: 4200, vendaM2: 10500, reais: true },
+  { id: 'agua-verde', nome: 'Água Verde (simulado)',       lat: -25.4489, lon: -49.2859, terrenoM2: 4200, vendaM2: 10500 },
   { id: 'batel',      nome: 'Batel',            lat: -25.4420, lon: -49.2905, terrenoM2: 6500, vendaM2: 14000 },
   { id: 'ecoville',   nome: 'Ecoville (Mossunguê)', lat: -25.4380, lon: -49.3375, terrenoM2: 3800, vendaM2: 11500 },
   { id: 'portao',     nome: 'Portão',           lat: -25.4757, lon: -49.2932, terrenoM2: 2900, vendaM2: 8000 },
@@ -41,22 +42,32 @@ export function rng(seed) {
   };
 }
 
-// Envoltória: recuos + taxa de ocupação + altura → pavimentos possíveis
+// Envoltória: recuos + taxa de ocupação + altura → pavimentos possíveis.
+// Testa cada número de pavimentos: mais andares exigem recuos laterais maiores (H/6), que estreitam a
+// projeção. Fica com o menor número de andares que atinge a maior área computável viável.
 export function envoltoria(lot, zona, usarOutorga) {
   const ca = usarOutorga ? zona.caMax : zona.ca;
-  const computavel = lot.area * ca;
+  const potencial = lot.area * ca;
   const recF = zona.recuoFrontal;
-  // recuo lateral/fundos simplificado: 0 até 2 pav, H/6 (mín 2,5 m) acima
-  const pavAlvo = Math.min(zona.altura, Math.max(1, Math.ceil(computavel / (lot.area * zona.to))));
-  const recL = pavAlvo <= 2 ? 0 : Math.max(2.5, (pavAlvo * 3) / 6);
-  let w = Math.max(4, lot.frente - 2 * recL);
-  let d = Math.max(4, lot.fundo - recF - recL);
   const maxProj = lot.area * zona.to;
-  if (w * d > maxProj) { const k = Math.sqrt(maxProj / (w * d)); w *= k; d *= k; }
-  const projecao = w * d;
-  const pav = Math.min(zona.altura, Math.max(1, Math.ceil(computavel / projecao)));
-  const computavelReal = Math.min(computavel, projecao * pav);
-  return { ca, computavel: computavelReal, projecao, pav, w, d, recF, recL, altura: pav * 3 };
+  const MIN_LADO = 7; // menor largura útil de um pavimento (m)
+  let best = null;
+  for (let pav = 1; pav <= zona.altura; pav++) {
+    const recL = pav <= 2 ? 0 : Math.max(2.5, (pav * 3) / 6);
+    let w = lot.frente - 2 * recL, d = lot.fundo - recF - recL;
+    if (w < MIN_LADO || d < MIN_LADO) break;
+    if (w * d > maxProj) { const k = Math.sqrt(maxProj / (w * d)); w *= k; d *= k; }
+    const projecao = w * d;
+    const computavel = Math.min(potencial, projecao * pav);
+    if (!best || computavel > best.computavel + 0.5) best = { ca, computavel, projecao, pav, w, d, recF, recL, altura: pav * 3 };
+  }
+  if (!best) { // lote estreito demais até para 1 pavimento com recuos
+    const w = Math.max(3, lot.frente), d = Math.max(3, lot.fundo - recF);
+    best = { ca, computavel: Math.min(potencial, w * d), projecao: w * d, pav: 1, w, d, recF, recL: 0, altura: 3 };
+  }
+  best.potencial = potencial;
+  best.limitadoPorForma = best.computavel < potencial - 1;
+  return best;
 }
 
 export function viabilidade(lot, zona, p, usarOutorga) {

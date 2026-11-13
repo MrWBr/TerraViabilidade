@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/CSS2DRenderer.js';
 import { BAIRROS, ZONAS, PREMISSAS, viabilidade, brl, num, rng } from './data.js';
 import { carregarCidade, corners, RAIO } from './city.js';
+import { COLETA } from './reais.js';
 
 // ---------------- estado ----------------
 const S = {
@@ -271,7 +272,7 @@ function buildLots(lots) {
     }
     grp.add(plate, edge);
     const el = document.createElement('div');
-    el.className = 'pin';
+    el.className = 'pin' + (lot.real ? ' real' : '');
     el.innerHTML = `<div class="card"><b></b><span></span></div><div class="stem"></div>`;
     el.addEventListener('click', (e) => { e.stopPropagation(); select(lot); });
     el.addEventListener('pointerenter', () => hover(lot)); el.addEventListener('pointerleave', () => hover(null));
@@ -319,7 +320,7 @@ function renderList() {
     const li = document.createElement('li');
     if (S.selected === l) li.className = 'on';
     const col = v.margem >= 18 ? 'var(--accent)' : v.margem >= 8 ? 'var(--warn)' : 'var(--bad)';
-    li.innerHTML = `<span class="t">${l.rua}, ${l.numero}</span><span class="m" style="color:${col}">${num(v.margem, 1)}%</span>
+    li.innerHTML = `<span class="t">${l.real ? '<i class="real-dot" title="anúncio real"></i>' : ''}${l.rua}, ${l.numero}</span><span class="m" style="color:${col}">${num(v.margem, 1)}%</span>
       <span class="s">${brl(l.preco, true)} · ${num(l.area)} m² · ${l.zona}</span>`;
     li.onclick = () => select(l);
     li.onmouseenter = () => hover(l); li.onmouseleave = () => hover(null);
@@ -422,16 +423,23 @@ function renderDetail() {
     <div class="d-head">
       <span class="zone-chip">${lot.zona} · ${z.nome}</span>
       <h2>${lot.rua}, ${lot.numero}</h2>
-      <p>${S.bairro.nome}, Curitiba · anúncio simulado #${lot.id} · ${lot.diasAnunciado} dias no mercado</p>
+      <p>${lot.real
+        ? `Água Verde, Curitiba · <b class="real-tag">anúncio real</b> · ${lot.fonte} · coletado em ${COLETA} · <a href="${lot.url}" target="_blank" rel="noopener">ver anúncio ↗</a>`
+        : `${S.bairro.nome}, Curitiba · anúncio simulado #${lot.id} · ${lot.diasAnunciado} dias no mercado`}</p>
+      ${lot.real ? `<div class="flags">
+        ${lot.precisao === 'rua' || !lot.ruaEncontrada ? '<span class="flag warn">posição aproximada</span>' : '<span class="flag ok">localizado pelo número</span>'}
+        ${lot.medidasEstimadas ? '<span class="flag warn">testada × fundo estimados</span>' : '<span class="flag ok">medidas do anúncio</span>'}
+        ${lot.zonaEstimada ? '<span class="flag warn">zona estimada</span>' : `<span class="flag ok">zona do anúncio: ${lot.zonaAnuncio}</span>`}
+      </div>${lot.obs ? `<p class="obs">${lot.obs}</p>` : ''}` : ''}
     </div>
-    <div class="price"><b>${brl(lot.preco)}</b><span>${brl(lot.ppm)}/m²</span></div>
+    <div class="price"><b>${brl(lot.preco)}</b><span>${brl(lot.ppm)}/m²${lot.real ? ' · preço pedido' : ''}</span></div>
     <div class="grid">
       <div class="kpi"><small>Área do terreno</small><b>${num(lot.area)} m²</b></div>
-      <div class="kpi"><small>Testada × fundo</small><b>${num(lot.frente)} × ${num(lot.fundo)} m</b></div>
-      <div class="kpi"><small>Situação</small><b>${lot.casaExistente ? 'Casa a demolir' : 'Vago'}</b></div>
+      <div class="kpi"><small>Testada × fundo${lot.medidasEstimadas ? ' (est.)' : ''}</small><b>${num(lot.frente, lot.frente % 1 ? 1 : 0)} × ${num(lot.fundo, lot.fundo % 1 ? 1 : 0)} m</b></div>
+      <div class="kpi"><small>Situação</small><b>${lot.real ? lot.situacao || 'Não informada' : lot.casaExistente ? 'Casa a demolir' : 'Vago'}</b></div>
       <div class="kpi"><small>Pavimentos possíveis</small><b id="kPav">–</b></div>
     </div>
-    <div class="sec"><h4>Zoneamento (simulado)</h4>
+    <div class="sec"><h4>Zoneamento ${lot.real && !lot.zonaEstimada ? `(parâmetros simplificados da ${lot.zona})` : '(simulado)'}</h4>
       <table class="params">
         <tr><td>Coeficiente de aproveitamento</td><td>${num(z.ca, 1)} (até ${num(z.caMax, 1)} c/ outorga)</td></tr>
         <tr><td>Altura máxima</td><td>${z.altura} pavimentos</td></tr>
@@ -447,6 +455,7 @@ function renderDetail() {
         <div class="kpi"><small>Projeção (térreo)</small><b id="kProj">–</b></div>
         <div class="kpi"><small>Área construída total</small><b id="kConst">–</b></div>
       </div>
+      <p class="obs" id="kForma" style="color:var(--warn)"></p>
       <button class="back" id="toggleView" style="margin:10px 0 0;width:100%">Ver volume em 3D</button>
     </div>
     <div class="sec"><h4>Premissas do estudo</h4>
@@ -459,7 +468,7 @@ function renderDetail() {
       </div>
     </div>
     <div class="sec"><h4>Resultado</h4><div class="verdict" id="verdict"></div></div>
-    <div class="disclaimer">⚠️ Protótipo. Zoneamento, preços e anúncios são <b>simulados</b>. Mapa: © colaboradores do OpenStreetMap. Antes de qualquer decisão, confirme parâmetros na Guia Amarela (Consulta Informativa de Lote) da Prefeitura de Curitiba.</div>`;
+    <div class="disclaimer">⚠️ Protótipo. ${lot.real ? 'Preço, área e endereço vêm do anúncio público (preço pedido, não de fechamento). Os parâmetros da zona são <b>simplificados</b>.' : 'Zoneamento, preços e anúncios são <b>simulados</b>.'} Mapa: © colaboradores do OpenStreetMap. Antes de qualquer decisão, confirme parâmetros na Guia Amarela (Consulta Informativa de Lote) da Prefeitura de Curitiba.</div>`;
   body.querySelectorAll('input[data-k]').forEach((inp) => (inp.oninput = () => { const v = parseFloat(inp.value); if (!isNaN(v)) { S.prem[inp.dataset.k] = v; updateResults(true); } }));
   body.querySelector('#outorga').onchange = (e) => { S.outorga = e.target.checked; buildEnvelope(lot); updateResults(true); };
   body.querySelector('#toggleView').onclick = (e) => {
@@ -480,6 +489,9 @@ function updateResults(recolorAll) {
   $('kPriv').textContent = `${num(v.privativa)} m²`;
   $('kProj').textContent = `${num(v.env.projecao)} m²`;
   $('kConst').textContent = `${num(v.construida)} m²`;
+  $('kForma').textContent = v.env.limitadoPorForma
+    ? `A forma do lote limita o aproveitamento: o coeficiente permitiria ${num(v.env.potencial)} m², mas os recuos só deixam usar ${num(v.env.computavel)} m².`
+    : '';
   const cls = v.margem >= S.prem.margemAlvo ? 'ok' : v.margem >= S.prem.margemAlvo / 2 ? 'mid' : 'bad';
   const lbl = { ok: 'Viável', mid: 'Marginal', bad: 'Inviável' }[cls];
   const barCol = { ok: 'var(--accent)', mid: 'var(--warn)', bad: 'var(--bad)' }[cls];
@@ -558,8 +570,12 @@ function montarCena(b, city) {
   st.innerHTML = city.fonte === 'osm' ? '● OSM ao vivo · © OpenStreetMap' : '● Modo demo (OSM indisponível)';
   S.view = 'iso';
   controls.enableRotate = true;
+  const esc = 420 / RAIO;
+  Object.assign(sun.shadow.camera, { left: -RAIO * 1.3, right: RAIO * 1.3, top: RAIO * 1.3, bottom: -RAIO * 1.3 });
+  sun.shadow.camera.updateProjectionMatrix();
+  controls.minZoom = 0.6 * esc;
   setPolar(ISO);
-  placeCamera(new THREE.Vector3(0, 0, 0), ISO, Math.PI / 4, 1.1);
+  placeCamera(new THREE.Vector3(0, 0, 0), ISO, Math.PI / 4, 1.1 * Math.max(esc, 0.75));
 }
 
 const sel = document.getElementById('bairro');

@@ -1,7 +1,8 @@
 // Geometria da cidade: OpenStreetMap (Overpass) com fallback procedural + geração de lotes.
 import { ZONAS, rng } from './data.js';
+import { TERRENOS_REAIS } from './reais.js';
 
-export const RAIO = 420; // metade do lado do recorte (m)
+export let RAIO = 420; // metade do lado do recorte (m) — ajustado por bairro
 
 const ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
@@ -20,17 +21,17 @@ function projetor(lat0, lon0) {
 async function fetchOverpass(b, signal) {
   const dLat = (RAIO * 1.05) / 110540, dLon = (RAIO * 1.05) / (111320 * Math.cos((b.lat * Math.PI) / 180));
   const bbox = `${b.lat - dLat},${b.lon - dLon},${b.lat + dLat},${b.lon + dLon}`;
-  const q = `[out:json][timeout:25];(
+  const q = `[out:json][timeout:60];(
     way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|service)$"](${bbox});
     way["building"](${bbox});
     way["leisure"~"^(park|garden|pitch|playground)$"](${bbox});
     way["landuse"~"^(grass|recreation_ground|forest|meadow)$"](${bbox});
   );out geom;`;
-  const cacheKey = 'terra-osm-v2-' + b.id;
+  const cacheKey = 'terra-osm-v3-' + b.id + '-' + RAIO;
   try { const c = sessionStorage.getItem(cacheKey); if (c) return JSON.parse(c); } catch (_) {}
   // dispara nos servidores em paralelo; o primeiro que responder vence. Timeout cobre também a leitura do corpo.
   const ctrls = ENDPOINTS.map(() => new AbortController());
-  const timer = setTimeout(() => ctrls.forEach((c) => c.abort()), 25000);
+  const timer = setTimeout(() => ctrls.forEach((c) => c.abort()), RAIO > 500 ? 50000 : 25000);
   try {
     const j = await Promise.any(ENDPOINTS.map(async (url, i) => {
       const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q), signal: ctrls[i].signal,
@@ -245,8 +246,13 @@ function gerarLotes(city, b, rand, alvo = 18) {
     const preco = Math.round((area * ppm) / 5000) * 5000;
     lots.push({ id: 100 + lots.length * 7 + Math.floor(rand() * 5), rua: rua || 'Rua sem nome', numero: 100 + Math.floor(rand() * 2400), cx: c[0], cz: c[1], u, v, frente: f, fundo: d, area, zona, ppm: Math.round(preco / area), preco, diasAnunciado: 3 + Math.floor(rand() * 200), casaExistente: false });
   }
-  // remove edificações baixas que caem dentro dos lotes (vira "terreno com casa a demolir")
-  city.buildings = buildings.filter((bd) => {
+  limparEdificios(city, lots);
+  return lots;
+}
+
+// remove edificações que caem dentro dos lotes (vira "terreno com casa a demolir")
+function limparEdificios(city, lots) {
+  city.buildings = city.buildings.filter((bd) => {
     const hit = lots.find((l) => inPoly(bd.c, corners(l)));
     if (hit) hit.casaExistente = true;
     return !hit;
@@ -254,10 +260,65 @@ function gerarLotes(city, b, rand, alvo = 18) {
   return lots;
 }
 
+const norm = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+function zonaDoAnuncio(z) {
+  if (!z) return null;
+  const m = String(z).toUpperCase().match(/ZR\s*-?\s*(\d)/);
+  return m && ZONAS['ZR-' + m[1]] ? 'ZR-' + m[1] : null;
+}
+
+// Encaixa anúncios reais no mapa: acha o trecho de rua com o mesmo nome mais próximo do ponto
+// geocodificado, alinha a testada com a rua e põe o lote do lado em que o ponto caiu.
+function posicionarReais(city, b, lista) {
+  const proj = projetor(b.lat, b.lon);
+  const lots = [];
+  lista.forEach((r, i) => {
+    const P = proj(r.lat, r.lon);
+    if (Math.abs(P[0]) > RAIO - 25 || Math.abs(P[1]) > RAIO - 25) { console.info('Fora do recorte:', r.rua, r.numero); return; }
+    const alvo = norm(r.rua);
+    let best = null, bestScore = 1e9;
+    for (const s of city.segs) {
+      if (s.rank < 0) continue;
+      const d = distSeg(P, s.a, s.b);
+      const score = s.name && norm(s.name) === alvo ? d : d + 1000;
+      if (score < bestScore) { bestScore = score; best = s; }
+    }
+    if (!best) return;
+    const ruaEncontrada = bestScore < 1000 && bestScore < 120;
+    const dx = best.b[0] - best.a[0], dz = best.b[1] - best.a[1], L = Math.hypot(dx, dz) || 1;
+    const u = [dx / L, dz / L];
+    let t = ((P[0] - best.a[0]) * dx + (P[1] - best.a[1]) * dz) / (L * L);
+    t = Math.max(0, Math.min(1, t));
+    const Q = [best.a[0] + dx * t, best.a[1] + dz * t];
+    const side = Math.sign((P[0] - Q[0]) * -u[1] + (P[1] - Q[1]) * u[0]) || 1;
+    const v = [-u[1] * side, u[0] * side];
+    let { frente, fundo } = r, medidasEstimadas = false;
+    if (!frente || !fundo) { frente = r.area < 450 ? 12 : r.area < 900 ? 15 : 25; fundo = Math.round((r.area / frente) * 10) / 10; medidasEstimadas = true; }
+    const off = best.w / 2 + 2.5 + fundo / 2;
+    const c = [Q[0] + v[0] * off, Q[1] + v[1] * off];
+    let zona = zonaDoAnuncio(r.zonaAnuncio), zonaEstimada = false;
+    if (!zona) {
+      // sem zona no anúncio: assume a zona predominante entre os anúncios do bairro (ZR-4 em Água Verde)
+      zonaEstimada = true;
+      zona = 'ZR-4';
+    }
+    lots.push({
+      ...r, id: i + 1, real: true, cx: c[0], cz: c[1], u, v, frente, fundo, area: r.area,
+      zona, zonaEstimada, medidasEstimadas, ruaEncontrada, ppm: Math.round(r.preco / r.area), casaExistente: false,
+    });
+  });
+  limparEdificios(city, lots);
+  return lots;
+}
+
 export async function carregarCidade(b, onStatus) {
+  RAIO = b.raio || 420;
   let city = null, fonte = 'demo';
+  const reais = b.reais ? TERRENOS_REAIS[b.id] || [] : null;
+  const montarLotes = (city, rand) => (reais ? posicionarReais(city, b, reais) : gerarLotes(city, b, rand));
   try {
-    onStatus?.('Buscando ruas e edificações no OpenStreetMap… (até 25 s)');
+    onStatus?.(`Buscando ruas e edificações no OpenStreetMap… (até ${RAIO > 500 ? 50 : 25} s)`);
     const t0 = performance.now();
     const json = await fetchOverpass(b);
     onStatus?.(`Montando o bairro (${json.elements.length} elementos)…`);
@@ -265,8 +326,8 @@ export async function carregarCidade(b, onStatus) {
     const rand = rng(b.id);
     city = parseOSM(json, b, rand);
     if (city.segs.length < 10) throw new Error('poucos dados');
-    city.lots = gerarLotes(city, b, rand);
-    if (city.lots.length < 4) throw new Error('poucos lotes encaixados: ' + city.lots.length);
+    city.lots = montarLotes(city, rand);
+    if (city.lots.length < 3) throw new Error('poucos lotes encaixados: ' + city.lots.length);
     fonte = 'osm';
     console.info(`OSM ok em ${Math.round(performance.now() - t0)} ms: ${city.segs.length} trechos, ${city.buildings.length} prédios, ${city.lots.length} lotes`);
   } catch (e) {
@@ -274,9 +335,10 @@ export async function carregarCidade(b, onStatus) {
     onStatus?.('Mapa real indisponível, gerando bairro de demonstração…');
     const rand = rng(b.id);
     city = procedural(b, rand);
-    city.lots = gerarLotes(city, b, rand);
+    city.lots = montarLotes(city, rand);
   }
   city.fonte = fonte;
+  city.reais = !!reais;
   return city;
 }
 
