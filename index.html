@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terra · Viabilidade Imobiliária</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 3 29 10 16 17 3 10Z' fill='%2334d399'/><path d='M3 10v12l13 7V17Z' fill='%23059669'/><path d='M29 10v12l-13 7V17Z' fill='%2310b981'/></svg>" />
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/addons/" } }
+  </script>
+</head>
+<body>
+  <div id="scene"></div>
+
+  <header class="topbar glass">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 3 29 10 16 17 3 10Z" fill="#34d399"/><path d="M3 10v12l13 7V17Z" fill="#059669"/><path d="M29 10v12l-13 7V17Z" fill="#10b981"/></svg>
+      <div>
+        <strong>Terra</strong>
+        <span>viabilidade imobiliária</span>
+      </div>
+    </div>
+    <div class="controls">
+      <label class="select">
+        <span>Bairro</span>
+        <select id="bairro"></select>
+      </label>
+      <div class="seg" id="colorMode">
+        <button data-mode="ppm" class="on">R$/m²</button>
+        <button data-mode="margin">Margem</button>
+      </div>
+      <span id="status" class="badge">carregando…</span>
+    </div>
+  </header>
+
+  <aside id="list" class="panel glass">
+    <h3>Oportunidades <small id="count"></small></h3>
+    <p class="hint">Ordenadas pela margem estimada</p>
+    <ol id="lotList"></ol>
+  </aside>
+
+  <aside id="detail" class="panel glass hidden">
+    <button id="back" class="back">← Voltar ao mapa</button>
+    <div id="detailBody"></div>
+  </aside>
+
+  <div id="legend" class="glass"></div>
+
+  <div id="help" class="glass">
+    <b>Arrastar</b> move · <b>Scroll</b> zoom · <b>Botão direito</b> gira · <b>Clique</b> no terreno abre a ficha
+  </div>
+
+  <div id="loader"><div class="spin"></div><p id="loaderText">Buscando ruas e edificações no OpenStreetMap…</p></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
