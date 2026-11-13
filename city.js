@@ -90,6 +90,7 @@ function parseOSM(json, b, rand) {
       if (t.building) {
         let h = parseFloat(t.height);
         if (!h && t['building:levels']) h = parseFloat(t['building:levels']) * 3.1;
+        const alturaReal = h > 0;
         if (!h) {
           const area = Math.abs(polyArea(pts));
           const r = rand();
@@ -97,7 +98,7 @@ function parseOSM(json, b, rand) {
           else if (area > 200 && r < 0.25) h = 9 + rand() * 12;
           else h = 3.5 + rand() * 4;
         }
-        buildings.push({ poly: pts, h: Math.min(h, 140), c });
+        buildings.push({ poly: pts, h: Math.min(h, 140), c, alturaReal });
       } else parks.push({ poly: pts });
     }
   }

@@ -129,16 +129,18 @@ function mergeArrays(list) {
   return geo;
 }
 
-function buildBuildings(buildings, rand) {
-  const parts = [], c = new THREE.Color();
+function buildBuildings(buildings, rand, distinguir) {
+  // distinguir = true: prédios com altura cadastrada no OSM ficam sólidos; os de altura estimada, translúcidos
+  const solid = [], ghost = [], c = new THREE.Color();
   for (const b of buildings) {
     const shape = new THREE.Shape(b.poly.map(([x, z]) => new THREE.Vector2(x, -z)));
     let g;
     try { g = new THREE.ExtrudeGeometry(shape, { depth: b.h, bevelEnabled: false }); } catch { continue; }
     g.rotateX(-Math.PI / 2);
     if (g.index) g = g.toNonIndexed();
-    const pal = b.h > 14 ? COR.torres : COR.casas;
-    c.setHex(pal[Math.floor(rand() * pal.length)]);
+    const estimado = distinguir && !b.alturaReal;
+    if (estimado) c.setHex(0xdde6f0);
+    else { const pal = b.h > 14 ? COR.torres : COR.casas; c.setHex(pal[Math.floor(rand() * pal.length)]); }
     const p = g.attributes.position.array, nr = g.attributes.normal.array, col = new Float32Array(p.length);
     for (let i = 0; i < p.length; i += 3) {
       // telhado levemente mais escuro, base com AO fake
@@ -146,13 +148,19 @@ function buildBuildings(buildings, rand) {
       const ao = roof ? 0.93 : 0.82 + 0.18 * Math.min(1, p[i + 1] / 6);
       col[i] = c.r * ao; col[i + 1] = c.g * ao; col[i + 2] = c.b * ao;
     }
-    parts.push({ pos: p, nor: nr, col });
+    (estimado ? ghost : solid).push({ pos: p, nor: nr, col });
     g.dispose();
   }
-  if (!parts.length) return new THREE.Group();
-  const mesh = new THREE.Mesh(mergeArrays(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 }));
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  return mesh;
+  const grp = new THREE.Group();
+  if (solid.length) {
+    const m = new THREE.Mesh(mergeArrays(solid), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 }));
+    m.castShadow = true; m.receiveShadow = true; grp.add(m);
+  }
+  if (ghost.length) {
+    const m = new THREE.Mesh(mergeArrays(ghost), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, transparent: true, opacity: 0.55 }));
+    m.renderOrder = 1; grp.add(m);
+  }
+  return grp;
 }
 
 function buildRoads(segs) {
@@ -307,7 +315,12 @@ function recolor() {
   const [a, b] = S.colorMode === 'ppm' ? [lo, hi] : [hi, lo];
   leg.innerHTML = `<b>${S.colorMode === 'ppm' ? 'Preço do terreno por m²' : 'Margem estimada sobre VGV'}</b>
     <div class="scale" style="background:linear-gradient(90deg,#22c55e,#facc15,#ef4444)"></div>
-    <div class="ends"><span>${fmt(a)}</span><span>${fmt(b)}</span></div>`;
+    <div class="ends"><span>${fmt(a)}</span><span>${fmt(b)}</span></div>
+    ${S.city.fonte === 'osm' ? (() => {
+      const n = S.city.buildings.length, r = S.city.buildings.filter((x) => x.alturaReal).length;
+      return `<div class="bld"><span><i class="sw solid"></i>altura cadastrada no OSM (${num((r / (n || 1)) * 100)}%)</span>
+        <span><i class="sw ghost"></i>altura estimada — ilustrativa</span></div>`;
+    })() : ''}`;
   renderList();
 }
 
@@ -561,7 +574,7 @@ function montarCena(b, city) {
   cityGroup.add(base, grass);
   cityGroup.add(buildRoads(city.segs));
   cityGroup.add(buildParksAndTrees(city, rand));
-  cityGroup.add(buildBuildings(city.buildings, rand));
+  cityGroup.add(buildBuildings(city.buildings, rand, city.fonte === 'osm'));
   cityGroup.add(buildLots(city.lots));
   scene.add(cityGroup);
   recolor();
